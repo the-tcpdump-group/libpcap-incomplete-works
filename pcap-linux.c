@@ -64,6 +64,10 @@
 #ifdef HAVE_NETPACKET_PACKET_H
 #include <netpacket/packet.h>
 #endif
+#ifdef SO_ATTACH_FILTER
+#include <linux/types.h>
+#include <linux/filter.h>
+#endif
 
 #ifndef __GLIBC__
 typedef int		socklen_t;
@@ -185,7 +189,7 @@ pcap_read(pcap_t *handle, int max_packets, pcap_handler callback, u_char *user)
 		tv.tv_sec	= (handle->md.timeout / 1000);
 	}
 	
-	for( packets = 0; max_packets == -1 || packets <= max_packets; )
+	for( packets = 0; max_packets == -1 || packets < max_packets; )
 	{
 		status = pcap_read_packet( handle, callback, user );
 
@@ -310,29 +314,35 @@ pcap_stats( pcap_t *handle, struct pcap_stat *stats )
 int
 pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 {
-	struct bpf_program	fcode;
+#ifdef SO_ATTACH_FILTER
+	struct sock_fprog	fcode;
+#endif
 
-	if( !filter || !handle )
+	if( !handle )
 		return -1;
-
-	/* Make our private copy of the filter */
-	fcode.bf_len   = filter->bf_len;
-	fcode.bf_insns = malloc( filter->bf_len * sizeof(*filter->bf_insns) );
-	if( fcode.bf_insns == NULL ) {
-		sprintf( handle->errbuf, "calloc: %s", pcap_strerror(errno) );
+	if( !filter ) {
+		strcpy( handle->errbuf, "setfilter: No filter specified" );
 		return -1;
-	} 
-	memcpy( fcode.bf_insns, filter->bf_insns, 
-		fcode.bf_len * sizeof(*fcode.bf_insns) );
+	}
 
 	/* Free old filter code if existing */
+	handle->fcode.bf_len	= 0;
 	if( handle->fcode.bf_insns ) {
 		free( handle->fcode.bf_insns );
 		handle->fcode.bf_insns = NULL;
 	}
 
-	/* Install the new filter */
-	handle->fcode = fcode;
+
+	/* Make our private copy of the filter */
+	handle->fcode.bf_len   = filter->bf_len;
+	handle->fcode.bf_insns = 
+		malloc( filter->bf_len * sizeof(*filter->bf_insns) );
+	if( handle->fcode.bf_insns == NULL ) {
+		sprintf( handle->errbuf, "calloc: %s", pcap_strerror(errno) );
+		return -1;
+	} 
+	memcpy( handle->fcode.bf_insns, filter->bf_insns, 
+		filter->bf_len * sizeof(*filter->bf_insns) );
 
 	/* Run user level packet filter by default. Will be overriden if 
 	 * installing a kernel filter succeeds. */
@@ -341,7 +351,17 @@ pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 	/* Install kernel level filter if possible */
 	
 #ifdef SO_ATTACH_FILTER
-	if( setsockopt(handle->fd, SOL_SOCKET, SO_ATTACH_FILTER, 
+	/* Oh joy, the Linux kernel uses struct sock_fprog instead of 
+	 * struct bpf_program and of course the length field is of 
+	 * different size. Pointed out by Sebastian */
+
+	fcode.filter	= (struct sock_filter *) handle->fcode.bf_insns;
+	fcode.len	= filter->bf_len;
+	if( filter->bf_len > USHRT_MAX ) {
+		fprintf( stderr, "Warning: Filter to complex for kernel\n" );
+		/* paranoid - should never happen */
+	} 
+	else if( setsockopt(handle->fd, SOL_SOCKET, SO_ATTACH_FILTER, 
 		       &fcode, sizeof(fcode)) == 0 )
 	{
 		handle->md.use_bpf = 1;
@@ -355,8 +375,6 @@ pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 		}
 	}
 #endif
-	fprintf( stderr, "Using %s level filter\n", 
-			handle->md.use_bpf ? "kernel" : "user" );
 
 	return 0;
 }
@@ -403,6 +421,7 @@ static int map_arphrd_to_dlt( int arptype )
 
 	Try to open a packet socket using the new kernel interface.
 	Returns 0 on failure.
+	FIXME: 0 uses to mean success (Sebastian)
 */
 static int
 live_open_new( pcap_t *handle, char *device, int promisc, 
@@ -457,6 +476,8 @@ live_open_new( pcap_t *handle, char *device, int promisc,
 				break;
 			}
 
+			fprintf( stderr, 
+				"Warning: Falling back to cooked socket\n" );
 			handle->linktype = DLT_RAW;
 		}
 
@@ -607,6 +628,7 @@ static void	restore_interface( void )
 
 	Try to open a packet socket using the old kernel interface.
 	Returns 0 on failure.
+	FIXME: 0 uses to mean success (Sebastian)
 */
 static int
 live_open_old( pcap_t *handle, char *device, int promisc, 
