@@ -100,8 +100,6 @@ static int 	iface_bind_old( int fd, const char *device, char *ebuf );
 pcap_t *
 pcap_open_live( char *device, int snaplen, int promisc, int to_ms, char *ebuf )
 {
-	struct capinfo	*info;
-	
 	/* Allocate a handle for this session and initialize the contents 
 	 * to all nulls. */
 	
@@ -139,7 +137,6 @@ pcap_open_live( char *device, int snaplen, int promisc, int to_ms, char *ebuf )
 		 * up and report our failure (ebuf is expected to be
 		 * set by the functions above). */
 
-		free( info );
 		free( handle );
 		return NULL;
 	}
@@ -313,7 +310,6 @@ pcap_stats( pcap_t *handle, struct pcap_stat *stats )
 int
 pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 {
-	struct capinfo		*info = (struct capinfo *) handle->md.device;
 	struct bpf_program	fcode;
 
 	if( !filter || !handle )
