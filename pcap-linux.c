@@ -26,17 +26,10 @@
 /*
     TODO:
 
-    - Change timeval structure. We should change this globally so that
-      tcpdump will not break in 2038 (while I am not sure it will last 
-      that long but as y2k has shown you never know)
-      NOTE: Before this change is done this code will not work on Alpha.
-    
     - Make it compatible with older Linux installations (at compilation time)
 
     BUGS: 
 
-    - if the encapsulation is unknown open_live should probably open the 
-      device in cooked mode
     - setting promiscuous on loopback for example gives every packet
       twice
 */
@@ -454,6 +447,32 @@ live_open_new( pcap_t *handle, char *device, int promisc,
 			break;
 		}
 
+		/* What kind of frames do we have to deal with? Fall back 
+		 * to cooked mode if we have an unknown interface type. */
+
+		arptype		= iface_get_arptype(sock_fd, device, ebuf);
+		if( arptype == -1 ) 
+			break;
+		handle->linktype = map_arphrd_to_dlt( arptype );
+		if( handle->linktype == -1 ) {
+			/* Unknown interface type - reopen in cooked mode */
+			
+			if( close(sock_fd) == -1 ) {
+				sprintf("close: %s", pcap_strerror(errno));
+				break;
+			}
+			sock_fd = socket( PF_PACKET, SOCK_DGRAM, 
+					  htons(ETH_P_ALL) );
+			if( sock_fd == -1 ) {
+				sprintf( ebuf, "socket: %s", 
+					       pcap_strerror(errno) );
+				break;
+			}
+
+			handle->linktype = DLT_RAW;
+		}
+
+
 		device_id = iface_get_id( sock_fd, device, ebuf );
 		if( device_id == -1 )
 			break;
@@ -481,18 +500,8 @@ live_open_new( pcap_t *handle, char *device, int promisc,
 		
 		/* Fill in the pcap structure */
 
-		arptype		= iface_get_arptype(sock_fd, device, ebuf);
-		if( arptype == -1 ) 
-			break;
-
 		handle->fd 	 = sock_fd;
 		handle->offset	 = 0;
-		handle->linktype = map_arphrd_to_dlt( arptype );
-		if( handle->linktype == -1 ) {
-			sprintf(ebuf, "interface type of %s not supported", 
-				      device);
-			break;
-		}
 
 		handle->buffer	 = malloc( handle->bufsize );
 		if( !handle->buffer ) {
