@@ -30,7 +30,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#) $Header: /tcpdump/master/libpcap/pcap-int.h,v 1.18.1.1 1999-10-07 23:46:40 mcr Exp $ (LBL)
+ * @(#) $Header: /tcpdump/master/libpcap/pcap-int.h,v 1.20.4.1 2000-05-08 21:21:48 torsten Exp $ (LBL)
  */
 
 #ifndef pcap_int_h
@@ -52,16 +52,17 @@ struct pcap_sf {
 struct pcap_md {
 	struct pcap_stat stat;
 	/*XXX*/
-	int use_bpf;
+	int use_bpf;		/* using kernel filter */
 	u_long	TotPkts;	/* can't oflow for 79 hrs on ether */
 	u_long	TotAccepted;	/* count accepted by filter */
 	u_long	TotDrops;	/* count of dropped packets */
 	long	TotMissed;	/* missed by i/f during this run */
 	long	OrigMissed;	/* missed by i/f before this run */
 #ifdef linux
-	int pad;
-	int skip;
-	char *device;
+	int	sock_packet;	/* using Linux 2.0 compatible interface */
+	int	timeout;	/* timeout specified to pcap_open_live */
+	int	promisc;	/* running in promiscuous mode */
+	char 	*device;	/* device name */
 #endif
 };
 
@@ -97,6 +98,27 @@ struct pcap {
 	char errbuf[PCAP_ERRBUF_SIZE];
 };
 
+/*
+ * This is a timeval as stored in disk in a dumpfile.
+ * It has to use the same types everywhere, independent of the actual
+ * `struct timeval'
+ */
+
+struct pcap_timeval {
+    bpf_int32 tv_sec;		/* seconds */
+    bpf_int32 tv_usec;		/* microseconds */
+};
+
+/*
+ * How a `pcap_pkthdr' is actually stored in the dumpfile.
+ */
+
+struct pcap_sf_pkthdr {
+    struct pcap_timeval ts;	/* time stamp */
+    bpf_u_int32 caplen;		/* length of portion present */
+    bpf_u_int32 len;		/* length this packet (off wire) */
+};
+
 int	yylex(void);
 
 #ifndef min
@@ -108,7 +130,7 @@ int	pcap_offline_read(pcap_t *, int, pcap_handler, u_char *);
 int	pcap_read(pcap_t *, int cnt, pcap_handler, u_char *);
 
 /* Ultrix pads to make everything line up on a nice boundary */
-#if defined(ultrix) || defined(__alpha)
+#if defined(ultrix) || defined(__alpha) || defined(__NetBSD__)
 #define       PCAP_FDDIPAD 3
 #endif
 

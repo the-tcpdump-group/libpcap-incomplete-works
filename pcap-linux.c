@@ -1,6 +1,7 @@
 /*
 	pcap-linux.c: Packet capture interface to the Linux kernel
 	Copyright (c) 2000 Torsten Landschoff <torsten@debian.org>
+			   Sebastian Krahmer  <krahmer@cs.uni-potsdam.de>
 
 	License: BSD
 
@@ -84,21 +85,6 @@ static int 	iface_get_arptype( int fd, const char *device, char *ebuf );
 static int 	iface_bind( int fd, int ifindex, char *ebuf );
 static int 	iface_bind_old( int fd, const char *device, char *ebuf );
 
-/* We want to save some additional information for a capture stream. 
- * Currently this is done by using the device element of the pcap_md
- * structure. This was formerly used to point to the device name. 
- * TODO: Implement a clean way to store those options in the pcap 
- * handle */
-
-struct capinfo {
-	int	timeout;	/* timeout passed to pcap_open_live */
-	int	device_id;
-	int	promisc;	/* opened in promisc mode */
-	int	uses_soft_pf;	/* user mode packet filter? */
-	int	sock_packet;	/* true if using old kernel interface */
-};
-
-
 /*
 	pcap_open_live:
 
@@ -107,7 +93,7 @@ struct capinfo {
 	information of course). If you pass 1 as promisc the interface
 	will be set to promiscous mode (XXX: I think this usage should 
 	be deprecated and functions be added to select that later allow
-	modification of that values).
+	modification of that values -- Torsten).
 
 	See also pcap(3).
 */
@@ -119,29 +105,24 @@ pcap_open_live( char *device, int snaplen, int promisc, int to_ms, char *ebuf )
 	/* Allocate a handle for this session and initialize the contents 
 	 * to all nulls. */
 	
-	pcap_t	*handle = malloc( sizeof(*handle) );
+	pcap_t	*handle = calloc( 1, sizeof(*handle) );
 	if( handle == NULL ) {
-		sprintf( ebuf, "malloc: %s", pcap_strerror(errno) );
+		sprintf( ebuf, "calloc: %s", pcap_strerror(errno) );
 		return NULL;
 	}
-
-	/* Allocate memory for some additional information */
-	
-	info = malloc( sizeof(*info) );
-	if( info == NULL ) {
-		sprintf( ebuf, "malloc: %s", pcap_strerror(errno) );
-		free( handle );
-		return NULL;
-	}
-	memset( info, 0, sizeof(*info) );
-	info->timeout	= to_ms;
-	info->promisc	= promisc;
 
 	/* Initialize some components of the pcap structure. */
 
 	memset( handle, 0, sizeof(*handle) );
 	handle->snapshot	= snaplen;
-	handle->md.device	= (char *) info;
+	handle->md.timeout	= to_ms;
+	handle->md.promisc	= promisc;
+	handle->md.device	= strdup( device );
+	if( handle->md.device == NULL ) {
+		sprintf( ebuf, "strdup: %s", pcap_strerror(errno) );
+		free( handle );
+		return NULL;
+	}
 
 	/* Current Linux kernels use the protocol family PF_PACKET to 
 	 * allow direct access to all packets on the network while 
@@ -168,7 +149,6 @@ pcap_open_live( char *device, int snaplen, int promisc, int to_ms, char *ebuf )
 	 * so pcap_read can try reading the fd and call select if no data
 	 * is available at once. */
 
-	((struct capinfo *) handle->md.device)->timeout	= to_ms;
 	if( to_ms > 0 ) {
 		int	flags = fcntl( handle->fd, F_GETFL );
 		if( flags != -1 ) {
@@ -202,11 +182,10 @@ pcap_read(pcap_t *handle, int max_packets, pcap_handler callback, u_char *user)
 	int		status, packets;
 	fd_set		read_fds;
 	struct timeval	tv;
-	struct capinfo	*info = (struct capinfo *) handle->md.device;
 
-	if( info->timeout > 0 ) {
-		tv.tv_usec	= (info->timeout % 1000) * 1000;
-		tv.tv_sec	= (info->timeout / 1000);
+	if( handle->md.timeout > 0 ) {
+		tv.tv_usec	= (handle->md.timeout % 1000) * 1000;
+		tv.tv_sec	= (handle->md.timeout / 1000);
 	}
 	
 	for( packets = 0; max_packets == -1 || packets <= max_packets; )
@@ -221,7 +200,7 @@ pcap_read(pcap_t *handle, int max_packets, pcap_handler callback, u_char *user)
 			
 		/* paranoia - the recvmsg call should block if we don't use 
 		 * a timeout */
-		if( info->timeout <= 0 )
+		if( handle->md.timeout <= 0 )
 			continue;
 
 		/* No packet available - go to sleep */
@@ -251,7 +230,6 @@ pcap_read(pcap_t *handle, int max_packets, pcap_handler callback, u_char *user)
 static int
 pcap_read_packet( pcap_t *handle, pcap_handler callback, u_char *userdata )
 {
-	struct capinfo		*info = (struct capinfo *) handle->md.device;
 	struct sockaddr		from;
 	socklen_t		fromlen;
 	int			packet_len, caplen;
@@ -290,7 +268,7 @@ pcap_read_packet( pcap_t *handle, pcap_handler callback, u_char *userdata )
 		caplen = handle->snapshot;
 
 	/* Run the packet filter if not using kernel filter */
-	if( info->uses_soft_pf && handle->fcode.bf_insns ) {
+	if( !handle->md.use_bpf && handle->fcode.bf_insns ) {
 		if( bpf_filter(handle->fcode.bf_insns, handle->buffer, 
 		                packet_len, caplen) == 0 )
 		{
@@ -300,10 +278,6 @@ pcap_read_packet( pcap_t *handle, pcap_handler callback, u_char *userdata )
 	}
 	
 	/* Fill in our own header data */
-	
-	/* XXX: This is actually bad. struct timeval is subject to change. 
-	 * This means that the size of the ts field will be different on 
-	 * different machine breaking alpha for example. */
 	
 	if( ioctl(handle->fd, SIOCGSTAMP, &pcap_header.ts) == -1 ) {
 		sprintf( "ioctl: %s", pcap_strerror(errno) );
@@ -334,13 +308,16 @@ pcap_stats( pcap_t *handle, struct pcap_stat *stats )
 /*
 	pcap_setfilter:
 
-	Attach the given BPF code to the packet capture device.
+	Attach the given BPF code to the packet capture device. 
 */
 int
 pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 {
 	struct capinfo		*info = (struct capinfo *) handle->md.device;
 	struct bpf_program	fcode;
+
+	if( !filter || !handle )
+		return -1;
 
 	/* Make our private copy of the filter */
 	fcode.bf_len   = filter->bf_len;
@@ -352,8 +329,8 @@ pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 	memcpy( fcode.bf_insns, filter->bf_insns, 
 		fcode.bf_len * sizeof(*fcode.bf_insns) );
 
-	/* Do we need to free the old filter code? */
-	if( info->uses_soft_pf && handle->fcode.bf_insns ) {
+	/* Free old filter code if existing */
+	if( handle->fcode.bf_insns ) {
 		free( handle->fcode.bf_insns );
 		handle->fcode.bf_insns = NULL;
 	}
@@ -361,23 +338,29 @@ pcap_setfilter( pcap_t *handle, struct bpf_program *filter )
 	/* Install the new filter */
 	handle->fcode = fcode;
 
-	/* Install kernel level filter if possible */
+	/* Run user level packet filter by default. Will be overriden if 
+	 * installing a kernel filter succeeds. */
+	handle->md.use_bpf = 0;
 
+	/* Install kernel level filter if possible */
+	
 #ifdef SO_ATTACH_FILTER
-	info->uses_soft_pf = 0;
 	if( setsockopt(handle->fd, SOL_SOCKET, SO_ATTACH_FILTER, 
-		       &fcode, sizeof(fcode)) == -1 )
+		       &fcode, sizeof(fcode)) == 0 )
 	{
+		handle->md.use_bpf = 1;
+	} else
+	{
+		/* Print a warning if kernel filter available but a problem
+		 * occured using it. */
 		if( errno != ENOPROTOOPT && errno != EOPNOTSUPP ) {
-			sprintf( handle->errbuf, 
-				 "setsockopt: %s", pcap_strerror(errno) );
-			return -1;
+			fprintf( stderr, "Warning: Kernel filter failed: %s\n", 
+				 pcap_strerror(errno) );
 		}
 	}
 #endif
-
-	/* Ugh, no kernel level filter. Fall back to user space */
-	info->uses_soft_pf = 1;
+	fprintf( stderr, "Using %s level filter\n", 
+			handle->md.use_bpf ? "kernel" : "user" );
 
 	return 0;
 }
@@ -445,7 +428,7 @@ live_open_new( pcap_t *handle, char *device, int promisc,
 		}
 
 		/* It seems the kernel supports the new interface. */
-		((struct capinfo *) handle->md.device)->sock_packet = 0;
+		handle->md.sock_packet = 0;
 
 		/* Currently we only support monitoring a single interface.
 		 * While the kernel can do more I want to reimplement the 
@@ -490,6 +473,18 @@ live_open_new( pcap_t *handle, char *device, int promisc,
 			break;
 
 		/* Select promiscous mode on/off */
+
+		/* XXX: We got reports that this does not work in 2.3.99.
+		 * Need to investigate. Using ioctl to switch the promisc 
+		 * mode at device level costs us most of the benefits of 
+		 * using the new kernel interface.
+		 * UPDATE: I found the bug. The kernel checks mr_alen
+		 * even if it is of zero interest for the request. A 
+		 * random value there made the kernel return EINVAL. 
+		 * Probably the right solution is to memset the whole 
+		 * struct at first. */
+
+		memset( &mr, 0, sizeof(mr) );
 		mr.mr_ifindex = device_id;
 		mr.mr_type    = promisc ? 
 			PACKET_MR_PROMISC : PACKET_MR_ALLMULTI;
@@ -634,7 +629,7 @@ live_open_old( pcap_t *handle, char *device, int promisc,
 		}
 
 		/* It worked - we are using the old interface */
-		((struct capinfo *) handle->md.device)->sock_packet = 1;
+		handle->md.sock_packet = 1;
 
 		/* Bind to the given device */
 
