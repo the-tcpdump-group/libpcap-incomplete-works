@@ -57,9 +57,17 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <netpacket/packet.h>
 #include <linux/if_ether.h>
 #include <netinet/if_ether.h>
+
+#ifdef HAVE_NETPACKET_PACKET_H
+#include <netpacket/packet.h>
+#endif
+
+#ifndef __GLIBC__
+typedef int		socklen_t;
+#define MSG_TRUNC	0
+#endif
 
 #define MAX_LINKHEADER_SIZE	256
 
@@ -421,6 +429,7 @@ static int
 live_open_new( pcap_t *handle, char *device, int promisc, 
 	       int to_ms, char *ebuf )
 {
+#ifdef HAVE_NETPACKET_PACKET_H
 	int			sock_fd = -1, device_id, mtu, arptype;
 	struct packet_mreq	mr;
 
@@ -516,6 +525,34 @@ live_open_new( pcap_t *handle, char *device, int promisc,
 	if( sock_fd != -1 )
 		close( sock_fd );
 	return 0;
+#else
+	strcpy( ebuf, "New packet capturing interface not supported by build " 
+                      "environment" );
+	return 0;
+#endif
+}
+
+#ifdef HAVE_NETPACKET_PACKET_H
+/*
+	iface_get_id:
+
+	Return the index of the given device name. Fill ebuf and return 
+	-1 on failure.
+*/
+static int
+iface_get_id( int fd, const char *device, char *ebuf )
+{
+	struct ifreq	ifr;
+
+	memset( &ifr, 0, sizeof(ifr) );
+	strncpy( ifr.ifr_name, device, sizeof(ifr.ifr_name) );
+
+	if( ioctl(fd, SIOCGIFINDEX, &ifr) == -1 ) {
+		sprintf( ebuf, "ioctl: %s", pcap_strerror(errno) );
+		return -1;
+	}
+
+	return ifr.ifr_ifindex;
 }
 
 /*
@@ -540,6 +577,8 @@ iface_bind( int fd, int ifindex, char *ebuf )
 
 	return 0;
 }
+
+#endif
 
 
 /* ===== Functions to interface to the older kernels ================== */
@@ -691,28 +730,6 @@ iface_bind_old( int fd, const char *device, char *ebuf )
 
 
 /* ===== System calls available on all supported kernels ============== */
-
-/*
-	iface_get_id:
-
-	Return the index of the given device name. Fill ebuf and return 
-	-1 on failure.
-*/
-static int
-iface_get_id( int fd, const char *device, char *ebuf )
-{
-	struct ifreq	ifr;
-
-	memset( &ifr, 0, sizeof(ifr) );
-	strncpy( ifr.ifr_name, device, sizeof(ifr.ifr_name) );
-
-	if( ioctl(fd, SIOCGIFINDEX, &ifr) == -1 ) {
-		sprintf( ebuf, "ioctl: %s", pcap_strerror(errno) );
-		return -1;
-	}
-
-	return ifr.ifr_ifindex;
-}
 
 /*
 	iface_get_mtu:
