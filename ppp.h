@@ -1,4 +1,4 @@
-/* @(#) $Header: /tcpdump/master/libpcap/ppp.h,v 1.7.1.1 1999-10-07 23:46:40 mcr Exp $ (LBL) */
+/* @(#) $Header: /tcpdump/master/libpcap/ppp.h,v 1.12 2005/02/08 19:52:19 guy Exp $ (LBL) */
 /*
  * Point to Point Protocol (PPP) RFC1331
  *
@@ -18,6 +18,9 @@
 #define PPP_ADDRESS	0xff	/* The address byte value */
 #define PPP_CONTROL	0x03	/* The control byte value */
 
+#define PPP_PPPD_IN	0x00	/* non-standard for DLT_PPP_PPPD */
+#define PPP_PPPD_OUT	0x01	/* non-standard for DLT_PPP_PPPD */
+
 /* Protocol numbers */
 #define PPP_IP		0x0021	/* Raw IP */
 #define PPP_OSI		0x0023	/* OSI Network Layer */
@@ -30,10 +33,13 @@
 #define PPP_BRPDU	0x0031	/* Bridging PDU */
 #define PPP_STII	0x0033	/* Stream Protocol (ST-II) */
 #define PPP_VINES	0x0035	/* Banyan Vines */
+#define PPP_IPV6	0x0057	/* Internet Protocol version 6 */
 
 #define PPP_HELLO	0x0201	/* 802.1d Hello Packets */
 #define PPP_LUXCOM	0x0231	/* Luxcom */
 #define PPP_SNS		0x0233	/* Sigma Network Systems */
+#define PPP_MPLS_UCAST  0x0281  /* rfc 3032 */
+#define PPP_MPLS_MCAST  0x0283  /* rfc 3022 */
 
 #define PPP_IPCP	0x8021	/* IP Control Protocol */
 #define PPP_OSICP	0x8023	/* OSI Network Layer Control Protocol */
@@ -43,6 +49,8 @@
 #define PPP_IPXCP	0x802b	/* Novell IPX Control Protocol */
 #define PPP_STIICP	0x8033	/* Strean Protocol Control Protocol */
 #define PPP_VINESCP	0x8035	/* Banyan Vines Control Protocol */
+#define PPP_IPV6CP	0x8057	/* IPv6 Control Protocol */
+#define PPP_MPLSCP      0x8281  /* rfc 3022 */
 
 #define PPP_LCP		0xc021	/* Link Control Protocol */
 #define PPP_PAP		0xc023	/* Password Authentication Protocol */
