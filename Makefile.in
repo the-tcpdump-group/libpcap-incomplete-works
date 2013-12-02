@@ -336,6 +336,8 @@ EXTRA_DIST = \
 	pcap-dos.h \
 	pcap-dpdk.c \
 	pcap-dpdk.h \
+	pcap-dvb.h \
+	pcap-dvb-linux.c \
 	pcap-enet.c \
 	pcap-haiku.cpp \
 	pcap-int.h \

@@ -307,6 +307,9 @@
 /* target host supports DPDK */
 #undef PCAP_SUPPORT_DPDK
 
+/* target host support Linux DVB capturing (v3 API) */
+#undef PCAP_SUPPORT_DVB
+
 /* target host supports Linux usbmon for USB sniffing */
 #undef PCAP_SUPPORT_LINUX_USBMON
 

@@ -1561,6 +1561,34 @@ main(void)
     if(PCAP_SUPPORT_NETFILTER)
         set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} pcap-netfilter-linux.c)
     endif(PCAP_SUPPORT_NETFILTER)
+
+    #
+    # Check for MPEG-TS capturing support.
+    #
+    # Life's too short to deal with trying to get this to compile
+    # if you don't get the right types defined with
+    # __KERNEL_STRICT_NAMES getting defined by some other include.
+    #
+    # Check whether the includes Just Work.  If not, don't turn on
+    # DVB support.
+    #
+    check_c_source_compiles(
+"#include <sys/ioctl.h>
+#include <linux/dvb/dmx.h>
+
+int
+main(void)
+{
+    ioctl(0, DMX_SET_BUFFER_SIZE, (char *)0);
+    ioctl(0, DMX_START, (char *)0);
+    ioctl(0, DMX_SET_PES_FILTER, (struct dmx_pes_filter_params*)0);
+    return 0;
+}
+"
+        PCAP_SUPPORT_DVB)
+    if(PCAP_SUPPORT_DVB)
+        set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} pcap-dvb-linux.c)
+    endif(PCAP_SUPPORT_DVB)
 endif()
 
 # Check for netmap sniffing support.
@@ -1586,6 +1614,8 @@ main(void)
         set(PROJECT_SOURCE_LIST_C ${PROJECT_SOURCE_LIST_C} pcap-netmap.c)
     endif(PCAP_SUPPORT_NETMAP)
 endif()
+
+# Check for MPEG-TS capturing support
 
 # Check for DPDK sniffing support
 if(NOT DISABLE_DPDK)

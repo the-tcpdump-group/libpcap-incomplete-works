@@ -651,6 +651,7 @@ PCAP_SUPPORT_BT
 PCAP_SUPPORT_DPDK
 DPDK_LIBS
 DPDK_CFLAGS
+PCAP_SUPPORT_DVB
 PCAP_SUPPORT_NETMAP
 PCAP_SUPPORT_NETFILTER
 PCAP_SUPPORT_LINUX_USBMON
@@ -11862,6 +11863,68 @@ $as_echo "#define PCAP_SUPPORT_NETMAP 1" >>confdefs.h
 	fi
 
 fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the platform could support DVB capturing" >&5
+$as_echo_n "checking whether the platform could support DVB capturing... " >&6; }
+case "$host_os" in
+linux*)
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+	#
+	# Life's too short to deal with trying to get this to compile
+	# if you don't get the right types defined with
+	# __KERNEL_STRICT_NAMES getting defined by some other include.
+	#
+	# Check whether the includes Just Work.  If not, don't turn on
+	# DVB support.
+	#
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether we can compile the DVB support" >&5
+$as_echo_n "checking whether we can compile the DVB support... " >&6; }
+	if ${ac_cv_linux_dvb_can_compile+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+$ac_includes_default
+#include <sys/ioctl.h>
+#include <linux/dvb/dmx.h>
+
+int
+main ()
+{
+
+	    ioctl(0, DMX_SET_BUFFER_SIZE, (char *)0);
+	    ioctl(0, DMX_START, (char *)0);
+	    ioctl(0, DMX_SET_PES_FILTER, (struct dmx_pes_filter_params*)0);
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  ac_cv_linux_dvb_can_compile=yes
+else
+  ac_cv_linux_dvb_can_compile=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_linux_dvb_can_compile" >&5
+$as_echo "$ac_cv_linux_dvb_can_compile" >&6; }
+	if test $ac_cv_linux_dvb_can_compile = yes ; then
+
+$as_echo "#define PCAP_SUPPORT_DVB 1" >>confdefs.h
+
+          MODULE_C_SRC="$MODULE_C_SRC pcap-dvb-linux.c"
+	fi
+	;;
+*)
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+	;;
+esac
+
 
 # Check for DPDK support.
 

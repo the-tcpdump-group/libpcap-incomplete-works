@@ -129,6 +129,10 @@ struct rtentry;		/* declarations in <net/if.h> */
 #include "pcap-airpcap.h"
 #endif
 
+#ifdef PCAP_SUPPORT_DVB
+#include "pcap-dvb.h"
+#endif
+
 #ifdef _WIN32
 /*
  * DllMain(), required when built as a Windows DLL.
@@ -701,6 +705,9 @@ static struct capture_source_type {
 #endif
 #ifdef HAVE_AIRPCAP_API
 	{ airpcap_findalldevs, airpcap_create },
+#endif
+#ifdef PCAP_SUPPORT_DVB
+	{ dvb_findalldevs, dvb_create },
 #endif
 	{ NULL, NULL }
 };
