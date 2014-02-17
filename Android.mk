@@ -16,7 +16,10 @@ LOCAL_SRC_FILES:=\
 	pcap-linux.c\
 	savefile.c\
 	scanner.c\
-	version.c
+	version.c config.h
+
+${LOCAL_PATH}/config.h: ${LOCAL_PATH}/Android/config.h
+	cp $(LOCAL_PATH)/Android/config.h $(LOCAL_PATH)/config.h
 
 LOCAL_CFLAGS:=-O2 -g
 LOCAL_CFLAGS+=-DHAVE_CONFIG_H -D_U_="__attribute__((unused))" -Dlinux -D__GLIBC__ -D_GNU_SOURCE
