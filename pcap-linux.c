@@ -97,6 +97,14 @@
 #include <dirent.h>
 #include <sys/eventfd.h>
 
+#ifdef PCAP_SUPPORT_DVB
+# include <linux/dvb/version.h>
+# define XSTRINGIFY(x) #x
+# define NUMSTRINGIFY(x) XSTRINGIFY(x)
+# define PCAP_DVB_VER_STR \
+    NUMSTRINGIFY(DVB_API_VERSION) "." NUMSTRINGIFY(DVB_API_VERSION_MINOR)
+#endif
+
 #include "pcap-int.h"
 #include "pcap/sll.h"
 #include "pcap/vlan.h"
@@ -5545,9 +5553,14 @@ pcap_set_protocol_linux(pcap_t *p, int protocol)
 const char *
 pcap_lib_version(void)
 {
+	return (PCAP_VERSION_STRING " (with "
 #if defined(HAVE_TPACKET3)
-	return (PCAP_VERSION_STRING " (with TPACKET_V3)");
+	"TPACKET_V3"
 #else
-	return (PCAP_VERSION_STRING " (with TPACKET_V2)");
+	"TPACKET_V2"
 #endif
+#if defined(PCAP_SUPPORT_DVB)
+	" and Linux DVB API v" PCAP_DVB_VER_STR
+#endif
+	")");
 }
